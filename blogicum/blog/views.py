@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
@@ -89,22 +90,42 @@ class RegistrationView(FormView):
 
 
 class ProfileDetailView(DetailView):
-    """Отображение страницы профиля."""
+    """Отображение страницы профиля пользователя с его постами."""
 
-    model = User
+    model = get_user_model()
     template_name = 'blog/profile.html'
     context_object_name = 'profile'
 
     def get_object(self, queryset=None):
+        """Получаем пользователя по username."""
         username = self.kwargs.get('username')
-        return get_object_or_404(User, username=username)
+        return get_object_or_404(self.model, username=username)
 
     def get_context_data(self, **kwargs):
+        """Добавляем посты пользователя в контекст."""
         context = super().get_context_data(**kwargs)
-        user_posts = Post.objects.filter(
-            author=self.object
+        user = self.object
+        
+        post_list = Post.objects.select_related(
+            'category', 'location', 'author'
+        ).filter(author=user)
+        
+        
+        if self.request.user != user:
+            post_list = post_list.filter(
+                is_published=True,
+                category__is_published=True,
+                pub_date__lte=timezone.now()
+            )
+        
+        
+        post_list = post_list.annotate(
+            comment_count=Count('comments')
         ).order_by('-pub_date')
-        context['page_obj'] = paginate_queryset(user_posts, self.request)
+        
+        # Пагинация
+        context['page_obj'] = paginate_queryset(post_list, self.request)
+        
         return context
 
 
@@ -223,20 +244,30 @@ class CategoryDetailView(LoginRequiredMixin, DetailView):
     model = Category
     template_name = 'blog/category.html'
     context_object_name = 'category'
+    slug_url_kwarg = 'category_slug'  
 
     def get_object(self, queryset=None):
-        category = super().get_object(queryset)
-        if not category.is_published:
-            raise Http404('Категория недоступна.')
-        return category
+        """Получаем категорию по slug с проверкой публикации."""
+        return get_object_or_404(
+            Category,
+            slug=self.kwargs.get('category_slug'),
+            is_published=True
+        )
 
     def get_context_data(self, **kwargs):
+        """Добавляем посты категории в контекст."""
         context = super().get_context_data(**kwargs)
-        now = timezone.now()
-        posts = Post.objects.filter(
+        
+        post_list = Post.objects.select_related(
+            'category', 'location', 'author'
+        ).filter(
             category=self.object,
             is_published=True,
-            pub_date__lte=now
+            pub_date__lte=timezone.now()
+        ).annotate(
+            comment_count=Count('comments')
         ).order_by('-pub_date')
-        context['page_obj'] = paginate_queryset(posts, self.request)
+        
+        context['page_obj'] = paginate_queryset(post_list, self.request)
+        
         return context

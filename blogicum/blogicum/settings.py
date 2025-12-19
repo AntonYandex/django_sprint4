@@ -94,7 +94,7 @@ AUTH_PASSWORD_VALIDATORS = [
 INTERNAL_IPS = ['127.0.0.1', ]
 LANGUAGE_CODE = 'ru-RU'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Europe/Saratov'
 
 USE_I18N = True
 
